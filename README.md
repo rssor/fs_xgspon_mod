@@ -2,7 +2,7 @@
 This utility makes the necessary changes to the FS.com XGS-PON module to allow it to operate on AT&T's XGS-PON fiber offerings. It attempts to do so as safely as possible, reverting automatically to a stock state if it is ever power cycled twice in quick succession.
 
 ## Disclaimers
-Bypass the provided BGW320 your own risk -- no matter how you go about it it is detectable and AT&T will find you if they go looking. This modification makes the minimum set of changes that I believe are necessary to get online but is intentionally trivially detectable. My rationale for this is that if anybody goes looking for these then chances are the devices are misbehaving and I'm not interested in making anybody's job harder than it needs to be.
+Bypass the provided BGW320 at your own risk -- no matter how you go about it it is detectable and AT&T will find you if they go looking. This modification makes the minimum set of changes that I believe are necessary to get online but is intentionally trivially detectable. My rationale for this is that if anybody goes looking for these then chances are the devices are misbehaving and I'm not interested in making anybody's job harder than it needs to be.
 
 Bypasses are detectable regardless of whether this device is used or any other (e.g. Azores D20 or WAS-110) -- the BGW320 hosts a variety of management services that won't be accessible from any customer bypassing provided equipment.
 
@@ -13,7 +13,7 @@ While this modification attempts to be as safe _as possible_ it's much less safe
 ## Requirements
 - Python 3.6+
 - The `install` command requires layer 2 adjacency to the stick (e.g. NO ROUTERS between you and the device, you have an address in `192.168.100.0/24`)
-- The `GPONxxxxxxxx` serial of the stick (you generally need to ask your FS.com rep for this, it's not in included with the device as of August 2023)
+- The `GPONxxxxxxxx` serial of the stick (you generally need to ask your FS.com rep for this, it's not included with the device as of August 2023)
 - Stick running firmware `R4.4.20.018` or `R4.4.20.022` (other versions _may_ be safe)
 
 This utility has been tested on:
