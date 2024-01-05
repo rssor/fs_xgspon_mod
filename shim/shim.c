@@ -2,6 +2,7 @@
 #include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
@@ -79,6 +80,21 @@ int VOS_CfgParamGetByName(char* param, void* dest, size_t len)
 	return orig_VOS_CfgParamGetByName(param, dest, len);
 }
 
+static int (*orig_VOS_CfgBackParamGetByName)(char* name, void* dest, size_t len);
+int VOS_CfgBackParamGetByName(char* param, void* dest, size_t len)
+{
+	memset(dest, 0, len);
+
+	// To enable setting both A/B sw versions, we intercept when it tries
+	// to read the version from the backup config and divert it to the
+	// payload config if it's provided. Necessary for ALCL ONTs on ALCL OLTs.
+	if (!strcmp(param, "SWVER")
+	 && !VOS_CfgParamGet("/mnt/rwdir/payload.cfg", "SWVER_BACK", dest, len))
+		return 0;
+
+	return orig_VOS_CfgBackParamGetByName(param, dest, len);
+}
+
 static int (*orig_VOS_ExecStr)(int unk, char* cmd);
 int VOS_ExecStr(int unk, char* cmd)
 {
@@ -110,7 +126,6 @@ int VOS_ExecStr(int unk, char* cmd)
 	return orig_VOS_ExecStr(unk, cmd);
 }
 
-
 static int (*orig_VOS_SpawnAppl)(int pri, int stack, int id, char* name);
 int VOS_SpawnAppl(int pri, int stack, int id, char* name)
 {
@@ -127,6 +142,178 @@ int VOS_SpawnAppl(int pri, int stack, int id, char* name)
 	return orig_VOS_SpawnAppl(pri, stack, id, name);
 }
 
+// VLAN filtering/rule 'improvement' support
+//
+// Some ISPs (Orange in France) ship more extended vlan rules down than this
+// stick supports to some customers. This stick supports at most 17, but up
+// to 22 have been observed. Unfortunately, the rules we need were at the end
+// and so are silently dropped.
+//
+// Interestingly, a lot of these rules are all for individual priority levels
+// of various VLANs. While only some of these VLANs are needed for internet
+// service, we can attempt to keep other services working by weakening the
+// priority match (e.g., instead of 'match pri 0, send pri 0' we can do 'match
+// any pri, sent orig pri') and winding up with only ONE rule per vlan.
+//
+// This requires the user's own gateway to be careful to not send any traffic
+// with a wrong priority up.
+//
+// NOTE: this INTENTIONALLY does not support effort changing the VID involved
+// in match rules, or insertion of any rules. This can at most DROP rules or
+// rewrite priority fields for inner tags.
+//
+// Rules for untagged frames and 2-tagged frames are always passed as I've
+// not seen that be an issue anywhere yet.
+
+struct vlan_mod_rule {
+	int vid; // must match inner vid filt of entry
+	int inner_pri_filt; // -1 to match any, otherwise must match entry
+	int inner_pri_new; // -2 to drop rule, -1 to preserve, any other value to set
+	int treat_pri_new; // -1 to preserve, any other value to set
+	int valid;
+};
+
+struct RxFrmOpTblEntry {
+	uint16_t EntityID;
+	uint8_t OuterPriFilter;
+	char _3[1];
+	uint16_t OuterVidFilter;
+	uint8_t OuterTPIDFilter;
+	uint8_t InnerPriFilter;
+	uint16_t InnerVidFilter;
+	uint8_t InnerTPIDFilter;
+	uint8_t EtherTypeFilter;
+	uint8_t AniBriPortNum;
+	uint8_t RmTagTreat;
+	uint8_t OuterPriTreat;
+	char _f[1];
+	uint16_t OuterVidTreat;
+	uint8_t OuterTPIDTreat;
+	uint8_t InnerPriTreat;
+	uint16_t InnerVidTreat;
+	uint8_t InnerTPIDTreat;
+	char _17[1];
+};
+
+#define VLAN_MAX_MOD_RULES  17
+
+static int vlan_parse_int(char** pos, int* dst)
+{
+	if (**pos == 0)
+		return 0;
+
+	char* oldpos = *pos;
+	*dst = strtol(*pos, pos, 0);
+	if (*pos == oldpos)
+		return 0;
+
+	// skip past the next ',', if any
+	if (**pos == ',')
+		*pos += 1;
+
+	return 1;
+}
+
+enum vlan_filter_action {
+	DROP,
+	PASS,
+};
+
+static enum vlan_filter_action vlan_should_filter(struct RxFrmOpTblEntry* entry)
+{
+	static struct vlan_mod_rule vlan_mod_rules[VLAN_MAX_MOD_RULES];
+	static int vlan_rules_initialized = 0;
+
+	// 2-tagged rule
+	if (entry->OuterPriFilter != 0xf)
+		return PASS;
+
+	// default 1-tagged or untagged rule
+	if (entry->InnerPriFilter >= 0xe)
+		return PASS;
+
+	if (!vlan_rules_initialized)
+	{
+		char vlan_rule_string[0x100];
+
+		// VOS_CfgParamGet does not null terminate if it runs out of space
+		memset(vlan_rule_string, 0, sizeof(vlan_rule_string));
+
+		if (!VOS_CfgParamGet("/mnt/rwdir/payload.cfg", "VLAN_MOD_RULES", vlan_rule_string, sizeof(vlan_rule_string)-1))
+		{
+			char* cur_pos = vlan_rule_string;
+
+			for (int i = 0; i < VLAN_MAX_MOD_RULES; i++)
+			{
+				if (!vlan_parse_int(&cur_pos, &vlan_mod_rules[i].vid)
+				 || !vlan_parse_int(&cur_pos, &vlan_mod_rules[i].inner_pri_filt)
+				 || !vlan_parse_int(&cur_pos, &vlan_mod_rules[i].inner_pri_new)
+				 || !vlan_parse_int(&cur_pos, &vlan_mod_rules[i].treat_pri_new))
+					break;
+
+				vlan_mod_rules[i].valid = 1;
+			}
+		}
+
+		vlan_rules_initialized = 1;
+	}
+
+	// at this point, we know it's a 1 tag rule, and by convention only
+	// the 'inner' part of the rules should be used.
+	for (int i = 0; i < VLAN_MAX_MOD_RULES && vlan_mod_rules[i].valid; i++)
+	{
+		struct vlan_mod_rule* rule = &vlan_mod_rules[i];
+
+		// vlan match *must* be explicit
+		if (rule->vid != entry->InnerVidFilter)
+			continue;
+
+		// inner priority filter match is optional, to allow expression of rules
+		// that drop all rules for a given vlan without knowing rule priority
+		if (rule->inner_pri_filt >= 0 && rule->inner_pri_filt != entry->InnerPriFilter)
+			continue;
+
+		if (rule->inner_pri_new == -2)
+			return DROP;
+
+		if (rule->inner_pri_new >= 0)
+			entry->InnerPriFilter = rule->inner_pri_new;
+
+		if (rule->treat_pri_new >= 0)
+			entry->InnerPriTreat = rule->treat_pri_new;
+
+		// first rule with a match takes an action and halts
+		// further rules
+		break;
+	}
+
+	return PASS;
+}
+
+static int (*orig_MIB_GetNextSub)(int id, void* out, size_t len);
+int MIB_GetNextSub(int id, void* out, size_t len)
+{
+	int ret;
+
+	while (!(ret = orig_MIB_GetNextSub(id, out, len))
+	    && (id == 0x5f) && (vlan_should_filter(out) == DROP));
+
+	return ret;
+}
+
+static int (*orig_MIB_GetFirstSub)(int id, void* out, size_t len);
+int MIB_GetFirstSub(int id, void* out, size_t len)
+{
+	int ret = orig_MIB_GetFirstSub(id, out, len);
+
+	// if the first rule is one that needs to be skipped,
+	// implement this in terms of the advance function
+	if ((id == 0x5f) && (vlan_should_filter(out) == DROP))
+		return MIB_GetNextSub(id, out, len);
+
+	return ret;
+}
+
 void _init()
 {
 #if DEBUG_ENABLED
@@ -137,8 +324,15 @@ void _init()
 
 	orig_VOS_SendSyncMsg = dlsym(RTLD_NEXT, "VOS_SendSyncMsg");
 	orig_VOS_CfgParamGetByName = dlsym(RTLD_NEXT, "VOS_CfgParamGetByName");
+	orig_VOS_CfgBackParamGetByName = dlsym(RTLD_NEXT, "VOS_CfgBackParamGetByName");
 	orig_VOS_ExecStr = dlsym(RTLD_NEXT, "VOS_ExecStr");
 	orig_VOS_SpawnAppl = dlsym(RTLD_NEXT, "VOS_SpawnAppl");
+
+	// while most binaries this shim is loaded by don't link against libmib,
+	// these will just be harmless NULL pointers that won't ever be reached
+	// unless we got loaded by MecMgr.
+	orig_MIB_GetFirstSub = dlsym(RTLD_NEXT, "MIB_GetFirstSub");
+	orig_MIB_GetNextSub = dlsym(RTLD_NEXT, "MIB_GetNextSub");
 }
 
 void* payload_postboot(void* arg)
