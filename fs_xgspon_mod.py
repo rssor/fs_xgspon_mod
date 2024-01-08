@@ -12,6 +12,31 @@ import time
 class ISP:
     REQUIRED_ITEMS = set()
     ETH10GESLOT = None
+
+    # Rules are (vid, inner_pri_filt_match, inner_pri_filt_new, inner_pri_treat_new)
+    #   vid
+    #     must match the innner vid filter of a rule exactly.
+    #   inner_pri_filt_match
+    #       -1 match rules with any priority
+    #     0-15 match rule with this value
+    #   inner_pri_filt_new
+    #       -2 drop the rule completely
+    #       -1 leave inner_pri_filt of matching rule alone
+    #     0-15 set inner_pri_filt of matching rule to this value
+    #   inner_pri_treat_new
+    #       -1 leave the inner_pri_treat of matching rule alone
+    #     0-15 set inner_pri_treat of mtaching rule to this value
+    #
+    # Rules will be checked against this list in order, only one
+    # rule may match and take actions. Some examples:
+    #
+    #   [(444, -1, -1, -1), (444, -1, -2, -1)]
+    #     First rule permits all rules for vid 444, second rule
+    #     drops all rules that match 444. The first rule prevents
+    #     the second rule from ever matching.
+    #
+    #   [(838, -1, -2, 0)]
+    #     Drops all rules that match on vid 838
     VLAN_MOD_RULES = []
 
     VENDOR_PERMITTED = []
@@ -122,7 +147,7 @@ class Orange(ISP):
     # TODO XXX
     # Is this the only XGS-PON ONT they're using right now?
     # might need to nuke this and make it a required arg
-    VENDOR_TO_EQID = {
+    VENDOR_TO_HWVER = {
         "SMBS": "SMBSXLB7400",
     }
 
@@ -139,7 +164,7 @@ class Orange(ISP):
         (838,  2,  8,  8),
         (838, -1, -2,  0),
 
-        # preserve the remapping of pri 5 to 4,
+        # preserve the rule remapping pri 5 to 4,
         # convert pri 0 rule to pass through all pris
         # as-is, then discard all other rules for 840
         (840,  5, -1, -1),
@@ -209,7 +234,11 @@ class CigTelnet(Telnet):
     def __init__(self, onu_ip, serial):
         serial = serial[:4].upper() + serial[4:].lower()
 
-        super().__init__(onu_ip, 23, 5)
+        try:
+            super().__init__(onu_ip, 23, 5)
+        except TimeoutError:
+            raise CigTimeout("Failed to connect")
+
         self._in_shell = False
 
         self.read_until(b"Login as:", 2)
@@ -336,6 +365,9 @@ def discoverserial(args):
 
 
 def process_backdoor_block(onu_ip, raw_socket, backdoor_packet, serials):
+    if not serials:
+        return False
+
     print(f"[!] Beginning processing chunk of {len(serials)} serials (next: {serials[0]})")
 
     def test_connection_alive(s):
@@ -381,7 +413,7 @@ def process_backdoor_block(onu_ip, raw_socket, backdoor_packet, serials):
         # only relevant for the first time we have a match,
         # look at up to the most recent 40 attempts as the
         # stick is fast enough to keep up
-        serials = serials[i-40:i+1]
+        serials = serials[max(i-40, 0):i+1]
         pivot = len(serials)//2
 
         return process_backdoor_block(onu_ip, raw_socket, backdoor_packet, serials[pivot:]) or \
@@ -551,19 +583,69 @@ def install(args):
         print("[-] Telnet timeout reached... make sure it's reachable")
 
 def persist(args):
-    print("Connecting via telnet...")
-    with CigTelnet(args.onu_ip, args.isp_ont_serial) as tn:
-        if "payload_postboot_dropbear" not in tn.sh_cmd("ls -l /tmp/"):
-            print("Persistence not allowed yet -- has it been 3+ minutes since boot?")
-            print("If it's been more than 3 minutes and the device is not listening for SSH connections, the mod is not active!")
-            return
+    try:
+        with CigTelnet(args.onu_ip, args.isp_ont_serial) as tn:
+            print("[+] Telnet connection established, login successful")
 
-        tn.sh_cmd("[ -f /tmp/payload_postboot_dropbear ] && touch /mnt/rwdir/payload_auto_rearm")
-        tn.sh_cmd("[ -f /mnt/rwdir/disarmed ] && rm /mnt/rwdir/disarmed")
-        tn.sh_cmd("[ ! -f /mnt/rwdir/setup.sh ] && ln -s /mnt/rwdir/stage0.sh /mnt/rwdir/setup.sh")
-        tn.sh_cmd("sync")
+            ls_rwdir_output = tn.sh_cmd("ls -l /mnt/rwdir/")
+            ls_tmp_output = tn.sh_cmd("ls -l /tmp/")
 
-        print("Persistence now enabled -- as a fail safe, a power cycle between ~30 seconds and ~120 seconds after boot should restore to stock")
+            if "payload" not in ls_tmp_output:
+                print("[-] Mod does not appear to be active for current boot! Install or rearm first!")
+                return
+
+            if "payload_auto_rearm" in ls_rwdir_output:
+                print("[!] Persistence already enabled")
+                return
+
+            if "payload_postboot_end" not in ls_tmp_output:
+                print("[-] Persistence prohibited -- postboot timer has not fired yet!")
+                print("[-] You may need to wait up to 3 minutes")
+                return
+
+            if "payload_postboot_dropbear" not in ls_tmp_output:
+                print("[-] Persistence prohibited -- postboot dropbear timer fired abnormally!")
+                return
+
+            tn.sh_cmd("[ -f /tmp/payload_postboot_dropbear ] && touch /mnt/rwdir/payload_auto_rearm")
+            tn.sh_cmd("[ -f /mnt/rwdir/disarmed ] && rm /mnt/rwdir/disarmed")
+            tn.sh_cmd("[ ! -f /mnt/rwdir/setup.sh ] && ln -s /mnt/rwdir/stage0.sh /mnt/rwdir/setup.sh")
+            tn.sh_cmd("sync")
+
+            print("[+] Persistence enabled")
+            print("[+] As a fail safe, power cycling shortly after initial boot (~30-120 seconds) will deactivate persistence until rearmed")
+    except CigPasswordError:
+        print("[-] Telnet password rejected... is the mod active?")
+    except CigTimeout:
+        print("[-] Telnet timeout reached... make sure it's reachable")
+
+def rearm(args):
+    try:
+        with CigTelnet(args.onu_ip, args.serial) as tn:
+            print("[+] Telnet connection established, login successful")
+
+            ls_rwdir_output = tn.sh_cmd("ls -l /mnt/rwdir/")
+            ls_tmp_output = tn.sh_cmd("ls -l /tmp/")
+
+            if "stage0.sh" not in ls_rwdir_output:
+                print("[-] No mod found in /mnt/rwdir/")
+                return
+
+            if "payload_auto_rearm" not in ls_rwdir_output and "setup.sh" not in ls_rwdir_output:
+                tn.sh_cmd("[ ! -f /mnt/rwdir/setup.sh ] && ln -s /mnt/rwdir/stage0.sh /mnt/rwdir/setup.sh")
+                print("[+] Mod in non-persistent mode, next boot will be with the mod active (one-shot)")
+
+            if "disarmed" in ls_rwdir_output:
+                tn.sh_cmd("[ -f /mnt/rwdir/disarmed ] && rm /mnt/rwdir/disarmed")
+                print("[+] Disarmed state cleared")
+
+                if "payload_auto_rearm" in ls_rwdir_output and "payload" not in ls_tmp_output:
+                    print("[+] Detected that the failsafe triggered, rebooting device...")
+                    tn.sh_cmd("reboot")
+    except CigPasswordError:
+        print("[-] Telnet password rejected")
+    except CigTimeout:
+        print("[-] Telnet timeout reached... make sure it's reachable")
 
 if __name__=="__main__":
     import argparse
@@ -600,10 +682,23 @@ if __name__=="__main__":
 
             parts = rule.split(",")
 
-            if len(parts) != 4:
-                raise argparse.ArgumentTypeError("rules must be formatted like 'vlan,pri_filter,new_filter,new_treat' (e.g. '832,-1,-2,0')")
+            try:
+                if len(parts) != 4:
+                    raise ValueError
+                rule = tuple(map(int, parts))
+            except ValueError:
+                raise argparse.ArgumentTypeError("rules must be formatted like 'vlan,pri_filter,new_filter,new_treat' (e.g. '851,-1,-2,0')")
 
-            rules.append(tuple(map(int, parts)))
+            if rule[0] not in range(0, 0x1001):
+                raise argparse.ArgumentTypeError("vlan id filter value must be in the range [0, 4096]")
+            if rule[1] not in range(-1, 16):
+                raise argparse.ArgumentTypeError("pri filter value must be in the range [-1, 15]")
+            if rule[2] not in range(-2, 16):
+                raise argparse.ArgumentTypeError("pri filter new value must be in the range [-2, 15]")
+            if rule[3] not in range(-1, 16):
+                raise argparse.ArgumentTypeError("pri treatment new value must be in the range [-1, 15]")
+
+            rules.append(rule)
 
         return rules
 
@@ -650,6 +745,11 @@ if __name__=="__main__":
     parse_persist.add_argument("--onu_ip", default="192.168.100.1")
     parse_persist.add_argument("isp_ont_serial", type=parse_serial)
     parse_persist.set_defaults(func=persist)
+
+    parse_rearm = s.add_parser("rearm")
+    parse_rearm.add_argument("--onu_ip", default="192.168.100.1")
+    parse_rearm.add_argument("serial", type=parse_serial)
+    parse_rearm.set_defaults(func=rearm)
 
     args = p.parse_args()
     args.func(args)
