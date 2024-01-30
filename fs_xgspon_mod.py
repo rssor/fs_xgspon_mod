@@ -48,13 +48,25 @@ class ISP:
     EQID_TO_HWVER = {}
     EQID_TO_SWVER = {}
 
+    KEEP_SERIAL = False
+
     def __init__(self, args):
         found = True
 
         self.settings = []
 
-        self.serial = args.isp_ont_serial[4:].lower()
-        self.vendor = args.isp_ont_serial[:4]
+        if self.KEEP_SERIAL is True and args.isp_ont_serial is None:
+            # we prefer use the original serial, as there's no need to change it
+            self.serial = args.serial[4:].lower()
+            self.vendor = args.serial[:4]
+        else:
+            # but if we get an isp_ont_serial, we should use that
+            if args.isp_ont_serial is None:
+                # and also require it if this ISP will not cooperate
+                raise ValueError(f"the following arguments are required: isp_ont_serial")
+
+            self.serial = args.isp_ont_serial[4:].lower()
+            self.vendor = args.isp_ont_serial[:4]
 
         self.eth_slot = args.eth_slot or self.ETH10GESLOT
         self.eqvid = args.eqvid
@@ -195,6 +207,14 @@ class Frontier(ISP):
     EQID_TO_SWVER = {
         "FRX523": "R4.4.13.051", # Known working Dec 24 2023
     }
+
+class KPN(ISP):
+    # KPN always expects slot 1 to be used
+    ETH10GESLOT = 1
+
+    # KPN will register a new serial on the network if you ask them nicely
+    # so we prefer to keep the original serial as-is when configuring the module
+    KEEP_SERIAL = True
 
 class Manual(ISP):
     # basically just allows the raw arguments to be used as-is,
@@ -524,7 +544,7 @@ def install(args):
             self.RequestHandlerClass(request, client_address, self, config=settings.config)
 
     try:
-        with CigTelnet(args.onu_ip, args.fs_onu_serial) as tn:
+        with CigTelnet(args.onu_ip, args.serial) as tn:
             (addr, _) = tn.get_socket().getsockname()
 
             print("[+] Telnet connection established, login successful")
@@ -584,7 +604,7 @@ def install(args):
 
 def persist(args):
     try:
-        with CigTelnet(args.onu_ip, args.isp_ont_serial) as tn:
+        with CigTelnet(args.onu_ip, args.serial) as tn:
             print("[+] Telnet connection established, login successful")
 
             ls_rwdir_output = tn.sh_cmd("ls -l /mnt/rwdir/")
@@ -730,9 +750,9 @@ if __name__=="__main__":
     parse_telnet.set_defaults(func=telnet)
 
     parse_install = s.add_parser("install")
-    parse_install.add_argument("fs_onu_serial", type=parse_serial)
+    parse_install.add_argument("serial", type=parse_serial)
     parse_install.add_argument("isp", choices=ISP._name_to_class.keys())
-    parse_install.add_argument("isp_ont_serial", type=parse_serial)
+    parse_install.add_argument("isp_ont_serial", type=parse_serial, nargs='?', default=None)
     parse_install.add_argument("--onu_ip", default="192.168.100.1")
     parse_install.add_argument("--eqvid", type=parse_length(20))
     parse_install.add_argument("--hwver", type=parse_length(14))
@@ -743,7 +763,7 @@ if __name__=="__main__":
 
     parse_persist = s.add_parser("persist")
     parse_persist.add_argument("--onu_ip", default="192.168.100.1")
-    parse_persist.add_argument("isp_ont_serial", type=parse_serial)
+    parse_persist.add_argument("serial", type=parse_serial)
     parse_persist.set_defaults(func=persist)
 
     parse_rearm = s.add_parser("rearm")
