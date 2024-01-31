@@ -604,7 +604,7 @@ def install(args):
 
 def persist(args):
     try:
-        with CigTelnet(args.onu_ip, args.fs_onu_serial) as tn:
+        with CigTelnet(args.onu_ip, args.isp_ont_serial) as tn:
             print("[+] Telnet connection established, login successful")
 
             ls_rwdir_output = tn.sh_cmd("ls -l /mnt/rwdir/")
@@ -763,7 +763,7 @@ if __name__=="__main__":
 
     parse_persist = s.add_parser("persist")
     parse_persist.add_argument("--onu_ip", default="192.168.100.1")
-    parse_persist.add_argument("fs_onu_serial", type=parse_serial)
+    parse_persist.add_argument("isp_ont_serial", type=parse_serial)
     parse_persist.set_defaults(func=persist)
 
     parse_rearm = s.add_parser("rearm")
