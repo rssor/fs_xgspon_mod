@@ -52,6 +52,10 @@ Ensure that you're sitting adjacent to the stick on the network and that you hav
 # Frontier, with an assigned FRX523
 ./fs_xgspon_mod.py install GPON227000fe frontier FTRO12ab34cd --eqvid FRX523
 
+# KPN, keeping the serial as-is and basically just changing the ethernet uni slot to 1
+# this may also 'just work' for any other ISP that just requires slot 1 to be used instead of 10
+./fs_xgspon_mod.py install GPON227000fe kpn
+
 # Any arbitrary ISP as long as you know the equipment id/hwver/swver and necessary ethernet uni slot
 ./fs_xgspon_mod.py install GPON227000fe manual ALCL12ab34cd --hwver SOMETHING --swver ELSE --eqvid EQUIPMENT --eth_slot 10
 
