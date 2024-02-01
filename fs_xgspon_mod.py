@@ -67,8 +67,7 @@ class ISP:
             if "o" in answer:
                 return overrideslot(args)
             elif not "i" in answer:
-                print("[!] Invalid choice - exiting")
-                exit(1)
+                raise ValueError(f"invalid choice: expected either o or i")
 
         if self.KEEP_SERIAL is True and args.isp_ont_serial is None:
             # we prefer use the original serial, as there's no need to change it
