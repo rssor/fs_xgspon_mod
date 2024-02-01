@@ -54,8 +54,6 @@ Ensure that you're sitting adjacent to the stick on the network and that you hav
 
 # KPN, just changing the ethernet uni slot from 10 to 1 and keeping the rest as-is
 # you can register the serial number of the module through the self-service tool of your provider
-./fs_xgspon_mod.py overrideslot GPON227000fe 1
-# you can also opt to fully install this mod, which also gives you e.g. SSH support (but strictly not neccesary)
 ./fs_xgspon_mod.py install GPON227000fe kpn
 
 # Any arbitrary ISP as long as you know the equipment id/hwver/swver and necessary ethernet uni slot

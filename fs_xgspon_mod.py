@@ -49,11 +49,26 @@ class ISP:
     EQID_TO_SWVER = {}
 
     KEEP_SERIAL = False
+    JUST_SLOT_OVERRIDE = False
 
     def __init__(self, args):
         found = True
 
         self.settings = []
+
+        if self.JUST_SLOT_OVERRIDE is True:
+            print("[!] To make the ONU work on this ISP's network, just an ETH UNI slot override is needed")
+            print("[!] Performing a slot override does not require any dangerous payloads to be applied")
+            print("[!] However, you can also choose to go ahead and install the full modification")
+            print("[!] When in doubt, you should probably try the less invasive (o)verride option first")
+
+            answer = input("Choose either (o)verride or (i)nstall: ")
+
+            if "o" in answer:
+                return overrideslot(args)
+            elif not "i" in answer:
+                print("[!] Invalid choice - exiting")
+                exit(1)
 
         if self.KEEP_SERIAL is True and args.isp_ont_serial is None:
             # we prefer use the original serial, as there's no need to change it
@@ -215,6 +230,10 @@ class KPN(ISP):
     # KPN will register a new serial on the network if you ask them nicely
     # so we prefer to keep the original serial as-is when configuring the module
     KEEP_SERIAL = True
+
+    # KPN only requires a slot override to work
+    # present the option to do just that to the user before we install anything modified
+    JUST_SLOT_OVERRIDE = True
 
 class Manual(ISP):
     # basically just allows the raw arguments to be used as-is,
