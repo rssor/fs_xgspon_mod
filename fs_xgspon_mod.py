@@ -667,6 +667,30 @@ def rearm(args):
     except CigTimeout:
         print("[-] Telnet timeout reached... make sure it's reachable")
 
+def overrideslot(args):
+    try:
+        with CigTelnet(args.onu_ip, args.fs_onu_serial) as tn:
+            print("[+] Telnet connection established, login successful")
+
+            exists_check = tn.sh_cmd("ls -l /mnt/rwdir/")
+
+            if "sys.cfg" in exists_check:
+                print("[!] /mnt/rwdir/sys.cfg already exists - continuing will remove any previous changes")
+
+                answer = input("Continue? (y)es or (n)o: ")
+                if not "y" in answer:
+                    return
+
+            tn.sh_cmd(f"echo ETH10GESLOT=\"{args.eth_slot}\" > /mnt/rwdir/sys.cfg")
+            print("[+] Ethernet port slot override applied -- press enter to reboot the ONU!")
+
+            tn.write(b"reboot") # missing newline on purpose
+            tn.interact()
+    except CigPasswordError:
+        print("[-] Telnet password rejected")
+    except CigTimeout:
+        print("[-] Telnet timeout reached... make sure it's reachable")
+
 if __name__=="__main__":
     import argparse
     import sys
@@ -757,7 +781,7 @@ if __name__=="__main__":
     parse_install.add_argument("--eqvid", type=parse_length(20))
     parse_install.add_argument("--hwver", type=parse_length(14))
     parse_install.add_argument("--swver", type=parse_length(14))
-    parse_install.add_argument("--eth_slot", type=int, choices=(1, 10))
+    parse_install.add_argument("--eth_slot", type=int, choices=(range(1, 65534)), metavar="[1-65534]")
     parse_install.add_argument("--vlan_rules", type=parse_vlan_filter)
     parse_install.set_defaults(func=install)
 
@@ -770,6 +794,12 @@ if __name__=="__main__":
     parse_rearm.add_argument("--onu_ip", default="192.168.100.1")
     parse_rearm.add_argument("serial", type=parse_serial)
     parse_rearm.set_defaults(func=rearm)
+
+    parse_overrideslot = s.add_parser("overrideslot")
+    parse_overrideslot.add_argument("--onu_ip", default="192.168.100.1")
+    parse_overrideslot.add_argument("fs_onu_serial", type=parse_serial)
+    parse_overrideslot.add_argument("eth_slot", type=int, choices=(range(1, 65534)), metavar="[1-65534]")
+    parse_overrideslot.set_defaults(func=overrideslot)
 
     args = p.parse_args()
     args.func(args)

@@ -52,8 +52,10 @@ Ensure that you're sitting adjacent to the stick on the network and that you hav
 # Frontier, with an assigned FRX523
 ./fs_xgspon_mod.py install GPON227000fe frontier FTRO12ab34cd --eqvid FRX523
 
-# KPN, keeping the serial as-is and basically just changing the ethernet uni slot to 1
-# this may also 'just work' for any other ISP that just requires slot 1 to be used instead of 10
+# KPN, just changing the ethernet uni slot from 10 to 1 and keeping the rest as-is
+# you can register the serial number of the module through the self-service tool of your provider
+./fs_xgspon_mod.py overrideslot GPON227000fe 1
+# you can also opt to fully install this mod, which also gives you e.g. SSH support (but strictly not neccesary)
 ./fs_xgspon_mod.py install GPON227000fe kpn
 
 # Any arbitrary ISP as long as you know the equipment id/hwver/swver and necessary ethernet uni slot
@@ -177,6 +179,25 @@ Creds for FS.com XGS-PON stick with serial GPON227000fe:
 
 The HMAC key used to derive passwords appears to be different between the various OEM customers, so I don't think this works for anything except the FS.com sticks.
 
+
+### Override ETH UNI slot
+
+If all you need is changing the ethernet UNI slot id, you can also use the `overrideslot` command which will place a config file on your module that overrides the slot number.
+
+This can be used as a more simple alternative to the full install method, and will not require any further modifications to any libraries nor re-arming.
+
+```
+./fs_xgspon_mod.py overrideslot GPON227000fe 1
+[+] Telnet connection established, login successful
+[!] /mnt/rwdir/sys.cfg already exists - continuing will remove any previous changes
+Continue? (y)es or (n)o: y
+[+] Ethernet port slot override applied -- press enter to reboot the ONU!
+reboot
+```
+
+You can remove the override by deleting the `/mnt/rwdir/sys.cfg` file through the telnet shell.
+
+If you are uncertain of the slot number to use, see the 'Finding right ETH10GESLOT' section below.
 
 ## Troubleshooting / Advanced
 
