@@ -800,7 +800,7 @@ if __name__=="__main__":
     parse_install.add_argument("--eqvid", type=parse_length(20))
     parse_install.add_argument("--hwver", type=parse_length(14))
     parse_install.add_argument("--swver", type=parse_length(14))
-    parse_install.add_argument("--eth_slot", type=int, choices=(range(1, 65534)), metavar="[1-65534]")
+    parse_install.add_argument("--eth_slot", type=int, choices=(1, 10), metavar="[1,10]")
     parse_install.add_argument("--vlan_rules", type=parse_vlan_filter)
     parse_install.set_defaults(func=install)
 
@@ -817,7 +817,7 @@ if __name__=="__main__":
     parse_overrideslot = s.add_parser("overrideslot")
     parse_overrideslot.add_argument("--onu_ip", default="192.168.100.1")
     parse_overrideslot.add_argument("fs_onu_serial", type=parse_serial)
-    parse_overrideslot.add_argument("eth_slot", type=int, choices=(range(1, 65534)), metavar="[1-65534]")
+    parse_overrideslot.add_argument("eth_slot", type=int, choices=(1, 10), metavar="[1,10]")
     parse_overrideslot.set_defaults(func=overrideslot)
 
     args = p.parse_args()
