@@ -49,14 +49,14 @@ class ISP:
     EQID_TO_SWVER = {}
 
     KEEP_SERIAL = False
-    JUST_SLOT_OVERRIDE = False
+    PREFER_SLOT_OVERRIDE = False
 
     def __init__(self, args):
         found = True
 
         self.settings = []
 
-        if self.JUST_SLOT_OVERRIDE is True:
+        if self.PREFER_SLOT_OVERRIDE is True:
             print("[!] To make the ONU work on this ISP's network, just an ETH UNI slot override is needed")
             print("[!] Performing a slot override does not require any dangerous payloads to be applied")
             print("[!] However, you can also choose to go ahead and install the full modification")
@@ -232,7 +232,7 @@ class KPN(ISP):
 
     # KPN only requires a slot override to work
     # present the option to do just that to the user before we install anything modified
-    JUST_SLOT_OVERRIDE = True
+    PREFER_SLOT_OVERRIDE = True
 
 class Manual(ISP):
     # basically just allows the raw arguments to be used as-is,
