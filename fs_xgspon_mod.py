@@ -208,6 +208,24 @@ class Orange(ISP):
         # 832 and 835 rules are fine as-is, so absent here
     ]
 
+class Telus(ISP):
+    VENDOR_PERMITTED = ["ALCL", "ARCB"]
+
+    VENDOR_TO_EQID = {
+        "ALCL": "BVMGJ10BRAXS250XA",
+        "ARCB": "NH20A",
+    }
+
+    VENDOR_TO_HWVER = {
+        "ALCL": "3FE48114ABBD01",
+        "ARCB": "PRV650AB-S-TS",
+    }
+
+    VENDOR_TO_SWVER = {
+        "ALCL": "3FE47493IJHK03", # Known working Jan 17 2024
+        "ARCB": "3FEARCB1001505", # Known working Feb 6 2024
+    }
+
 class Frontier(ISP):
     REQUIRED_ITEMS = set(("SWVER", "EepEqID", "EepEqVersionID"))
 
