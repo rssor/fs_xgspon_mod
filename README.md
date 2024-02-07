@@ -52,6 +52,9 @@ Ensure that you're sitting adjacent to the stick on the network and that you hav
 # Frontier, with an assigned FRX523
 ./fs_xgspon_mod.py install GPON227000fe frontier FTRO12ab34cd --eqvid FRX523
 
+# Telus
+./fs_xgspon_mod.py install GPON227000fe telus ARCB12ab34cd
+
 # KPN, just changing the ethernet uni slot from 10 to 1 and keeping the rest as-is
 # you can register the serial number of the module through the self-service tool of your provider
 ./fs_xgspon_mod.py install GPON227000fe kpn
