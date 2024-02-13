@@ -1,7 +1,5 @@
-# FS.com XGS-ONU-25-20NI AT&T Modification Utility
-This utility makes the necessary changes to the FS.com XGS-PON ONU to allow it to operate on AT&T (USA), Orange (FR), and other XGS-PON fiber offerings. It attempts to do so as safely as possible, reverting automatically to a stock state if it is ever power cycled twice in quick succession.
-
-This particular FS.com device is actually a CIG XG-99S which is available under a variety of different brands. There is an entire family of devices running very similar firmwares that can likely also be modified in roughly the same way, though modifications to this utility would be required to support them. Of particular interest are the CIG XG-99M devices (best known as the FOX-222) which can be found for $30-$50 online as of writing and which I plan to look at in the near future.
+# FS.com XGS-ONU-25-20NI / CIG XG-99S Modification Utility
+This utility makes the necessary changes to CIG XG-99S devices to allow them to operate on AT&T (USA), Orange (FR), KPN (NL), Telus (CA), Frontier (USA) and other XGS-PON fiber offerings. It attempts to do so as safely as possible, reverting automatically to a stock state if it is ever power cycled twice in quick succession.
 
 While this modification attempts to be as safe _as possible_ it's much less safe than running an unmodified device. Although the device has two firmware slots they share the userdata partition that gets mounted to `/mnt/rwdir/`. During boot all CIG firmwares check for `/mnt/rwdir/setup.sh` and run it if it exists. This is done before the PON stack starts, so if anything goes wrong *it will never come online* and you will need UART access and micro-soldering skills to recover the device. For this reason, the modification disarms itself as the first action it takes during every boot -- that is the _only_ safety mechanism available.
 
@@ -45,6 +43,8 @@ By convention the documentation below uses `GPON227000fe` to refer to the serial
 
 Ensure that you're sitting adjacent to the stick on the network and that you have an address in the `192.168.100.0/24` subnet. The stick is at `192.168.100.1`. Ensure that your machine is configured to accept conncections on port `8172` (you may need to add a firewall allow rule for this!). Activating the mod for a single boot only requires one command:
 
+NOTE: Certain ISPs can skip full installation and use only the [`overrideslot`](#override-eth-uni-slot) command.
+
 ```
 # ATT
 ./fs_xgspon_mod.py install GPON227000fe att HUMA12ab34cd
@@ -55,9 +55,7 @@ Ensure that you're sitting adjacent to the stick on the network and that you hav
 # Telus
 ./fs_xgspon_mod.py install GPON227000fe telus ARCB12ab34cd
 
-# KPN, just changing the ethernet uni slot from 10 to 1 and keeping the rest as-is
-# you can register the serial number of the module through the self-service tool of your provider
-./fs_xgspon_mod.py install GPON227000fe kpn
+# KPN should not use this command, but overrideslot instead
 
 # Any arbitrary ISP as long as you know the equipment id/hwver/swver and necessary ethernet uni slot
 ./fs_xgspon_mod.py install GPON227000fe manual ALCL12ab34cd --hwver SOMETHING --swver ELSE --eqvid EQUIPMENT --eth_slot 10
@@ -228,6 +226,8 @@ If you run `/s/m/show 506` from telnet and see 17 or fewer rules, you almost cer
 - [YuukiJapanTech](https://github.com/YuukiJapanTech) - Assembling the spectacular resources at https://github.com/YuukiJapanTech/CA8271x/
 - SipWannabe - Testing
 - Mastah - Testing/Debugging Orange connectivity issues
+- [Arpie](https://github.com/arpiecodes) - KPN support and `overrideslot`
+- [up-n-atom](https://github.com/up-n-atom) - Telus support
 
 ## References
 - https://github.com/YuukiJapanTech/CA8271x

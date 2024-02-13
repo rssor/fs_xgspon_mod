@@ -56,19 +56,6 @@ class ISP:
 
         self.settings = []
 
-        if self.PREFER_SLOT_OVERRIDE is True:
-            print("[!] To make the ONU work on this ISP's network, just an ETH UNI slot override is needed")
-            print("[!] Performing a slot override does not require any dangerous payloads to be applied")
-            print("[!] However, you can also choose to go ahead and install the full modification")
-            print("[!] When in doubt, you should probably try the less invasive (o)verride option first")
-
-            answer = input("Choose either (o)verride or (i)nstall: ")
-
-            if "o" in answer:
-                return overrideslot(args)
-            elif not "i" in answer:
-                raise ValueError(f"invalid choice: expected either o or i")
-
         if self.KEEP_SERIAL is True and args.isp_ont_serial is None:
             # we prefer use the original serial, as there's no need to change it
             self.serial = args.fs_onu_serial[4:].lower()
@@ -570,6 +557,18 @@ def install(args):
         print(f"[-] {e}")
         return
 
+    if settings.PREFER_SLOT_OVERRIDE is True:
+        print("[!] To make the ONU work on this ISP's network, just an ETH UNI slot override is needed")
+        print("[!] Performing a slot override does not require any dangerous payloads to be applied")
+        print("[!] However, you can also choose to go ahead and install the full modification")
+        print("[!] When in doubt, you should probably try the less invasive overrideslot command")
+
+        answer = input("Proceed with installation anyways? (y)es or (n)o").lower()
+
+        if answer not in ("y", "yes"):
+            print("[-] Aborting")
+            return
+
     print("[+] Generated payload configuration:")
 
     for line in settings.config.split("\n"):
@@ -704,6 +703,8 @@ def rearm(args):
         print("[-] Telnet timeout reached... make sure it's reachable")
 
 def overrideslot(args):
+    assert isinstance(args.eth_slot, int)
+
     try:
         with CigTelnet(args.onu_ip, args.fs_onu_serial) as tn:
             print("[+] Telnet connection established, login successful")
@@ -817,7 +818,7 @@ if __name__=="__main__":
     parse_install.add_argument("--eqvid", type=parse_length(20))
     parse_install.add_argument("--hwver", type=parse_length(14))
     parse_install.add_argument("--swver", type=parse_length(14))
-    parse_install.add_argument("--eth_slot", type=int, choices=(1, 10), metavar="[1,10]")
+    parse_install.add_argument("--eth_slot", type=int, choices=(1, 10))
     parse_install.add_argument("--vlan_rules", type=parse_vlan_filter)
     parse_install.set_defaults(func=install)
 
@@ -834,7 +835,7 @@ if __name__=="__main__":
     parse_overrideslot = s.add_parser("overrideslot")
     parse_overrideslot.add_argument("--onu_ip", default="192.168.100.1")
     parse_overrideslot.add_argument("fs_onu_serial", type=parse_serial)
-    parse_overrideslot.add_argument("eth_slot", type=int, choices=(1, 10), metavar="[1,10]")
+    parse_overrideslot.add_argument("eth_slot", type=int, choices=(1, 10))
     parse_overrideslot.set_defaults(func=overrideslot)
 
     args = p.parse_args()
