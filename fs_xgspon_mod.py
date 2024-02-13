@@ -56,6 +56,8 @@ class ISP:
 
         self.settings = []
 
+        self.eth_slot = args.eth_slot or self.ETH10GESLOT
+
         if self.PREFER_SLOT_OVERRIDE is True:
             print("[!] To make the ONU work on this ISP's network, just an ETH UNI slot override is needed")
             print("[!] Performing a slot override does not require any dangerous payloads to be applied")
@@ -65,7 +67,9 @@ class ISP:
             answer = input("Choose either (o)verride or (i)nstall: ")
 
             if "o" in answer:
-                return overrideslot(args)
+                args.eth_slot = self.eth_slot
+                overrideslot(args)
+                quit()
             elif not "i" in answer:
                 raise ValueError(f"invalid choice: expected either o or i")
 
@@ -82,7 +86,6 @@ class ISP:
             self.serial = args.isp_ont_serial[4:].lower()
             self.vendor = args.isp_ont_serial[:4]
 
-        self.eth_slot = args.eth_slot or self.ETH10GESLOT
         self.eqvid = args.eqvid
         self.hwver = args.hwver
         self.swver = args.swver
@@ -705,6 +708,9 @@ def rearm(args):
 
 def overrideslot(args):
     try:
+        if isinstance(args.eth_slot, int) == False:
+            raise ValueError(f"Value for ETH10GESLOT is not numeric - that doesn't seem right")
+
         with CigTelnet(args.onu_ip, args.fs_onu_serial) as tn:
             print("[+] Telnet connection established, login successful")
 
@@ -718,8 +724,9 @@ def overrideslot(args):
                     return
 
             tn.sh_cmd(f"echo ETH10GESLOT={args.eth_slot} > /mnt/rwdir/sys.cfg")
-            print("[+] Ethernet port slot override applied -- press enter to reboot the ONU!")
-
+            print("[+] Ethernet port slot override applied")
+            tn.sh_cmd(f"cat /mnt/rwdir/sys.cfg")
+            print("[+] If above looks OK to you, press enter to reboot the ONU!")
             tn.write(b"reboot") # missing newline on purpose
             tn.interact()
     except CigPasswordError:
