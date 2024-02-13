@@ -23,15 +23,18 @@ This utility is built on:
 ## Features
 - Ethernet UNI can be moved from slot 10 to slot 1 in MIB entities, thus becoming compatible with AT&T and Orange services
 - Disables traffic filtering when the Dot1X Port Extension Package (ME 290) is configured to filter all traffic
-- Uses serial provided to mod instead of the serial in EEPROM to allow the device to revert cleanly to stock config if the fail-safe triggers
+- Uses serial provided to mod instead of the serial in EEPROM to allow the device to revert cleanly to stock config if the failsafe triggers
 - Sets appropriate equipment ID/hwver/swver automatically if it can be determined from the ISP/serial combo provided as arguments
 - Starts `dropbear` sshd 2 minutes or so after device boot for more convenient administration (no idle timeout)
 - Limited ability to modify/suppress Received Frame VLAN Tagging Operations Table rules found in Extended VLAN Tagging Operation Configuration Data (ME 171) (needed for Orange support)
+- Limited installation mode not subject to failsafe for ISPs that support bring-your-own-ONT (such as many ISPs in the Netherlands)
 
-## Usage
+## Usage - Full Installation Mode (ATT, Frontier, Telus, Orange, etc.)
+
+Full installation is intended for ISPs where it is necessary to change the serial, account for 802.1x configuration issues, or account for VLAN configuration issues.
 
 1. Download the mod from [the Releases page](https://github.com/rssor/fs_xgspon_mod/releases) and extract it on a device with L2 connectivity to the module
-2. Obtain the serial for the FS.com ONU, either by emailing your FS.com rep, or using the [serial brute forcing](#serial-brute-forcing) functionality of this tool.
+2. Obtain the serial for the FS.com ONU, either by emailing your FS.com rep, or using the [serial brute forcing](#serial-brute-forcing) functionality of this tool
 3. Run the [install](#installation) command with the information required by your ISP (at minimum serial, possibly also hwver, swver, and equipment ID)
 4. Wait several minutes for device to reboot, ensure you have internet connectivity
 5. Run the [persist](#enabling-persistence) command
@@ -39,11 +42,19 @@ This utility is built on:
 
 By convention the documentation below uses `GPON227000fe` to refer to the serial of the FS.com device and `HUMA12ab34cd` to refer to the serial of your ISP's ONT.
 
+## Usage - Slot Override Only (KPN)
+
+Slot override only mode is intended For ISPs that allow you to bring your own devices and register the serial, typically the only action necessary might be to move the Ethernet UNI slot.
+
+1. Download the mod from [the Releases page](https://github.com/rssor/fs_xgspon_mod/releases) and extract it on a device with L2 connectivity to the module
+2. Obtain the serial for the FS.com ONU, either by emailing your FS.com rep, or using the [serial brute forcing](#serial-brute-forcing) functionality of this tool
+3. Run the [overrideslot](#override-eth-uni-slot) command with the information required by your ISP (almost certainly slot 1)
+
 ### Installation
 
-Ensure that you're sitting adjacent to the stick on the network and that you have an address in the `192.168.100.0/24` subnet. The stick is at `192.168.100.1`. Ensure that your machine is configured to accept conncections on port `8172` (you may need to add a firewall allow rule for this!). Activating the mod for a single boot only requires one command:
+NOTE: Certain ISPs can skip full installation and use only the [overrideslot](#override-eth-uni-slot) command.
 
-NOTE: Certain ISPs can skip full installation and use only the [`overrideslot`](#override-eth-uni-slot) command.
+Ensure that you're sitting adjacent to the stick on the network and that you have an address in the `192.168.100.0/24` subnet. The stick is at `192.168.100.1`. Ensure that your machine is configured to accept conncections on port `8172` (you may need to add a firewall allow rule for this!). Activating the mod for a single boot only requires one command:
 
 ```
 # ATT
@@ -55,7 +66,7 @@ NOTE: Certain ISPs can skip full installation and use only the [`overrideslot`](
 # Telus
 ./fs_xgspon_mod.py install GPON227000fe telus ARCB12ab34cd
 
-# KPN should not use this command, but overrideslot instead
+# KPN should not use this command, but overrideslot instead with slot 1!
 
 # Any arbitrary ISP as long as you know the equipment id/hwver/swver and necessary ethernet uni slot
 ./fs_xgspon_mod.py install GPON227000fe manual ALCL12ab34cd --hwver SOMETHING --swver ELSE --eqvid EQUIPMENT --eth_slot 10
@@ -106,7 +117,7 @@ Persistence allows the modification to automatically re-arm itself approximately
 
 ### Rearm
 
-Rearm is used to either re-enable persistence after the fail-safe triggers, or to enable the mod for the next boot if it's in non-persistent mode. If it detects that the failsafe had been triggered it will automatically reboot.
+Rearm is used to either re-enable persistence after the failsafe triggers, or to enable the mod for the next boot if it's in non-persistent mode. If it detects that the failsafe had been triggered it will automatically reboot.
 
 Recommended use is to set this up on an hourly or similar cron job on your gateway (using the original serial as an argument!) so that if the failsafe triggers it will be automatically re-enabled.
 
@@ -179,13 +190,14 @@ Creds for FS.com XGS-PON stick with serial GPON227000fe:
 The HMAC key used to derive passwords appears to be different between the various OEM customers, so I don't think this works for anything except the FS.com sticks.
 
 
-### Override ETH UNI slot
+### Override ETH UNI Slot
 
-If all you need is changing the ethernet UNI slot id, you can also use the `overrideslot` command which will place a config file on your module that overrides the slot number.
+If all you need is changing the ethernet UNI slot id, you can also use the `overrideslot` command which will place a config file on your module that overrides the slot number. KPN in the Netherlands is an example where this is all that is necessary to get the ONT online.
 
 This can be used as a more simple alternative to the full install method, and will not require any further modifications to any libraries nor re-arming.
 
 ```
+# KPN, example showing sys.cfg already be present
 ./fs_xgspon_mod.py overrideslot GPON227000fe 1
 [+] Telnet connection established, login successful
 [!] /mnt/rwdir/sys.cfg already exists - continuing will remove any previous changes
@@ -196,11 +208,11 @@ reboot
 
 You can remove the override by deleting the `/mnt/rwdir/sys.cfg` file through the telnet shell.
 
-If you are uncertain of the slot number to use, see the 'Finding right ETH10GESLOT' section below.
+If you are uncertain of the slot number to use, see the [Finding Right ETH10GESLOT](#finding-right-eth10geslot) section below.
 
 ## Troubleshooting / Advanced
 
-### Finding right ETH10GESLOT
+### Finding Right ETH10GESLOT
 
 If you appear to be in a real O5 state (VLAN rules populated by the OLT) but traffic isn't passing, check the bridgepack configuration to see how the OLT is configuring the bridge. If the wrong slot is in use, you'll see an error in the MEC log (`/system/log/show mec`) along the lines of the following:
 

@@ -8,6 +8,7 @@ import ctypes
 import socket
 import hmac
 import time
+import sys
 
 class ISP:
     REQUIRED_ITEMS = set()
@@ -561,7 +562,8 @@ def install(args):
         print("[!] To make the ONU work on this ISP's network, just an ETH UNI slot override is needed")
         print("[!] Performing a slot override does not require any dangerous payloads to be applied")
         print("[!] However, you can also choose to go ahead and install the full modification")
-        print("[!] When in doubt, you should probably try the less invasive overrideslot command")
+        print("[!] When in doubt, you should probably try the less invasive overrideslot command:")
+        print(f"    {sys.argv[0]} overrideslot {args.fs_onu_serial} {settings.eth_slot or 1}")
 
         answer = input("Proceed with installation anyways? (y)es or (n)o").lower()
 
@@ -714,8 +716,8 @@ def overrideslot(args):
             if "sys.cfg" in exists_check:
                 print("[!] /mnt/rwdir/sys.cfg already exists - continuing will remove any previous changes")
 
-                answer = input("Continue? (y)es or (n)o: ")
-                if not "y" in answer:
+                answer = input("Continue? (y)es or (n)o: ").lower()
+                if answer not in ("y", "yes"):
                     return
 
             tn.sh_cmd(f"echo ETH10GESLOT={args.eth_slot} > /mnt/rwdir/sys.cfg")
@@ -730,7 +732,6 @@ def overrideslot(args):
 
 if __name__=="__main__":
     import argparse
-    import sys
 
     def parse_serial(serial):
         serial = serial.upper()
@@ -784,7 +785,7 @@ if __name__=="__main__":
         return rules
 
     p = argparse.ArgumentParser()
-    s = p.add_subparsers()
+    s = p.add_subparsers(required=True)
 
     parse_genpw = s.add_parser("genpw")
     parse_genpw.add_argument("--onu_ip", default="192.168.100.1")
