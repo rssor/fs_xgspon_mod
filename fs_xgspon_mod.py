@@ -725,7 +725,7 @@ def overrideslot(args):
 
             tn.sh_cmd(f"echo ETH10GESLOT={args.eth_slot} > /mnt/rwdir/sys.cfg")
             print("[+] Ethernet port slot override applied")
-            tn.sh_cmd(f"cat /mnt/rwdir/sys.cfg")
+            print(tn.sh_cmd(f"cat /mnt/rwdir/sys.cfg"))
             print("[+] If above looks OK to you, press enter to reboot the ONU!")
             tn.write(b"reboot") # missing newline on purpose
             tn.interact()
