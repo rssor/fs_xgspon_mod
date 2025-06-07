@@ -137,7 +137,7 @@ FS.com doesn't distribute these with the serial you need to log in, requiring yo
 
 The serials take the form `GPONyymsssss` where `yy` is year (decimal, `23` for 2023), `m` is month (hex, `a` for October), and `sssss` is number within run. Production runs seem to be very small so brute force won't take much time if you can guess roughly when your stick was manufactured. I have yet to see any serial with `sssss` greater than `000fe`. These tools will try up through `00119` for each month.
 
-#### CIG Backdoor Brute Force (Linux only!)
+#### CIG Backdoor Brute Force (Linux & macOS only!)
 
 Brute forcing all possible serials should take around 20-30 seconds as of Jan 2024. It starts from the current month/year and works backwards, and assumes there were no units produced before Jan 2022.
 
