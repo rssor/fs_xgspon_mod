@@ -135,9 +135,10 @@ class ISP:
 class ATT(ISP):
     ETH10GESLOT = 1
 
-    VENDOR_PERMITTED = ["HUMA", "NOKA", "ALCL"]
+    VENDOR_PERMITTED = ["HUMA", "NOKA", "ALCL", "COMM"]
 
     VENDOR_TO_EQID = {
+        "COMM": "iONT620700X",
         "HUMA": "iONT320500G",
         "NOKA": "iONT320505G",
         "ALCL": "BVMGZ00BRAXS020XA",
