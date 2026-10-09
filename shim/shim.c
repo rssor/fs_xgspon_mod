@@ -290,13 +290,56 @@ static enum vlan_filter_action vlan_should_filter(struct RxFrmOpTblEntry* entry)
 	return PASS;
 }
 
+// --------------------------------------------------------------------------
+// ORANGE FRANCE XGS-PON VLAN 832 DUPLICATION
+//
+// In Orange France, the OLT pushes a single ME 171 rule for VID 832:
+//   Filter: InnerVid=832, InnerPri=8 (any) -> Treat: InnerVid=2800, InnerPri=8 (copy)
+// In CIG firmware (MecMgr), when a rule has InnerPriFilter=8, MecMgr creates US
+// flows for all priorities, but for the DS direction (inversion), it ONLY binds
+// the 2800->832 translation to the FIRST flow (Flow 0, mapped to Priority 0 in ME 130).
+// Because Orange DHCP requests MUST be sent with Priority 6 (Flow 2 / GEM 1536),
+// the DHCP offer returns from Orange on Flow 2, which has NO downstream rule
+// for VID 2800 and gets dropped by the Cortina chip (FIB LDPID is blackhole).
+//
+// Fix: When MecMgr queries sub-table 0x5f (ME 506 / RxFrmOpTbl), we intercept the
+// 832 entry and return TWO rules:
+//   1. First call:  InnerVid=832, InnerPri=0 -> Treat: InnerVid=2800, InnerPri=0 (for Flow 0 - Internet)
+//   2. Second call: InnerVid=832, InnerPri=6 -> Treat: InnerVid=2800, InnerPri=6 (for Flow 2 - DHCP / ARP)
+// Both Flow 0 and Flow 2 get the downstream translation installed in the bridge!
+// --------------------------------------------------------------------------
+static int inject_state = 0;
+static struct RxFrmOpTblEntry saved_832_entry;
+
 static int (*orig_MIB_GetNextSub)(int id, void* out, size_t len);
 int MIB_GetNextSub(int id, void* out, size_t len)
 {
+	if (id == 0x5f && inject_state == 1)
+	{
+		memcpy(out, &saved_832_entry, sizeof(struct RxFrmOpTblEntry));
+		struct RxFrmOpTblEntry* e = (struct RxFrmOpTblEntry*) out;
+		e->InnerPriFilter = 6;
+		e->InnerPriTreat = 6;
+		inject_state = 0;
+		return 0;
+	}
+
 	int ret;
 
 	while (!(ret = orig_MIB_GetNextSub(id, out, len))
 	    && (id == 0x5f) && (vlan_should_filter(out) == DROP));
+
+	if (!ret && id == 0x5f)
+	{
+		struct RxFrmOpTblEntry* e = (struct RxFrmOpTblEntry*) out;
+		if (e->OuterPriFilter == 0xf && e->InnerVidFilter == 832)
+		{
+			memcpy(&saved_832_entry, out, sizeof(struct RxFrmOpTblEntry));
+			e->InnerPriFilter = 0;
+			e->InnerPriTreat = 0;
+			inject_state = 1;
+		}
+	}
 
 	return ret;
 }
@@ -304,12 +347,25 @@ int MIB_GetNextSub(int id, void* out, size_t len)
 static int (*orig_MIB_GetFirstSub)(int id, void* out, size_t len);
 int MIB_GetFirstSub(int id, void* out, size_t len)
 {
+	inject_state = 0;
 	int ret = orig_MIB_GetFirstSub(id, out, len);
 
 	// if the first rule is one that needs to be skipped,
 	// implement this in terms of the advance function
 	if ((id == 0x5f) && (vlan_should_filter(out) == DROP))
 		return MIB_GetNextSub(id, out, len);
+
+	if (!ret && id == 0x5f)
+	{
+		struct RxFrmOpTblEntry* e = (struct RxFrmOpTblEntry*) out;
+		if (e->OuterPriFilter == 0xf && e->InnerVidFilter == 832)
+		{
+			memcpy(&saved_832_entry, out, sizeof(struct RxFrmOpTblEntry));
+			e->InnerPriFilter = 0;
+			e->InnerPriTreat = 0;
+			inject_state = 1;
+		}
+	}
 
 	return ret;
 }

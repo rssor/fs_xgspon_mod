@@ -231,6 +231,8 @@ This was taken from an unmodified stick (which defaults to using slot `10`, so t
 
 This device only supports up to 17 rules in the Received Frame VLAN Tagging Operation Table per UNI in ME 171. Some ISPs (namely Orange) require more than this number. This provides a facility through which rules can be effectively dropped before they are used during UNI configuration. Rules can be supplied using the `--vlan_rules` optional argument to the `install` command. Look at the rules in the Orange ISP implementation in the Python script for an explanation of how to craft them.
 
+On Orange (FR), the OLT delivers a single rule for VLAN 832 matching any priority (`InnerPriFilter = 8`). Due to a limitation in CIG firmware, the downstream translation is only bound to the first flow (Flow 0 / Priority 0). Because Orange DHCP requires 802.1p Priority 6 (Flow 2 / GEM 1536), incoming DHCP offers were discarded by the Cortina ASIC (FIB LDPID is blackhole). The shim automatically duplicates the 832 rule into both Priority 0 (Internet) and Priority 6 (DHCP/ARP) so that both services function without manual intervention.
+
 If you run `/s/m/show 506` from telnet and see 17 or fewer rules, you almost certainly don't need to use this functionality.
 
 ## Thanks To

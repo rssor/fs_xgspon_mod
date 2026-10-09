@@ -193,7 +193,8 @@ class Orange(ISP):
         (851,  0,  8,  8),
         (851, -1, -2,  0),
 
-        # 832 and 835 rules are fine as-is, so absent here
+        # 832 is duplicated in libvos_shim into Pri 0 (Internet) and Pri 6 (DHCP/ARP),
+        # 835 rules are fine as-is, so absent here
     ]
 
 class Telus(ISP):
